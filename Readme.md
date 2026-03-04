@@ -254,17 +254,3 @@ Start with ViT-B-32 for iteration. If you need better accuracy and can tolerate 
 | Fine-tuned (MLP) | Can learn non-linear boundaries | Overfits on small datasets | Only if you have 500+ images |
 
 ---
-
-## Troubleshooting
-
-**PC shuts down during evaluation**: CPU overheating under torch load. The eval and finetune scripts already limit threads to 2. If it still happens, run in Google Colab instead (free GPU, no thermal risk).
-
-**`scrape_images.py` returns 0 URLs**: The Bing image downloader can be flaky. Try running again, or manually collect images from Google Images into `data/pickle/` and `data/non_pickle/`.
-
-**Import errors / red underlines in IDE**: Make sure you ran `pip install -e .` from the project root. This installs the package in editable mode so your IDE can resolve `from pickle_detector import ...`.
-
-**`TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'`**: You're on Python 3.9, which doesn't support `X | Y` type hint syntax. This should already be fixed in all scripts — if you see it, replace `str | None` with `Optional[str]` and add `from typing import Optional`.
-
-**Fine-tuned model shows 100% accuracy**: You're evaluating on the training data. The real performance is the cross-validation output from `finetune.py`. Use a separate validation folder with images the model hasn't seen for an independent test.
-
-**Model struggles with food plates**: The training data probably has mostly isolated pickle images. Add more food-plate images (with and without pickles) to the training folders and retrain.
