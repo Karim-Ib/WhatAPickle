@@ -1,0 +1,7 @@
+{
+  "head_type": "logreg",
+  "n_samples": 300,
+  "n_pickle": 122,
+  "n_non_pickle": 178,
+  "train_accuracy": 1.0
+}

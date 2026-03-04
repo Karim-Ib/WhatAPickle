@@ -1,0 +1,9 @@
+pyproject.toml
+src/pickle_detector/__init__.py
+src/pickle_detector/detector.py
+src/pickle_detector/prompts.py
+src/pickle_detector.egg-info/PKG-INFO
+src/pickle_detector.egg-info/SOURCES.txt
+src/pickle_detector.egg-info/dependency_links.txt
+src/pickle_detector.egg-info/requires.txt
+src/pickle_detector.egg-info/top_level.txt
