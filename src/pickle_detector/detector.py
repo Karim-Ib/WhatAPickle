@@ -20,6 +20,7 @@ Usage:
     )
 """
 
+import os
 import pickle as pkl
 import io
 import json
@@ -41,8 +42,10 @@ class DetectionResult:
     is_pickle: bool
     per_prompt_scores: dict
     threshold: float
-    mode: str               # "zero_shot", "finetuned", or "gemini_fallback"
-    gemini_reasoning: str   # only populated when Gemini was called
+    mode: str  # "zero_shot", "finetuned", "zero_shot_and_finetuned", or "gemini_fallback"
+    zero_shot_score: Optional[float] = None   # when mode is zero_shot_and_finetuned
+    finetuned_score: Optional[float] = None   # when mode is zero_shot_and_finetuned
+    gemini_reasoning: str = ""   # only populated when Gemini was called
 
 
 class PickleDetector:
@@ -69,10 +72,13 @@ class PickleDetector:
             - score < 0.3 → confidently not pickle
             - score > 0.7 → confidently pickle
             - 0.3 to 0.7 → ask Gemini
+
+        If gemini_api_key is not provided, GEMINI_API_KEY from the environment
+        is used (e.g. from .env when loaded by the application).
         """
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.threshold = threshold
-        self.gemini_api_key = gemini_api_key
+        self.gemini_api_key = gemini_api_key or os.environ.get("GEMINI_API_KEY")
         self.uncertain_low, self.uncertain_high = uncertain_range
 
         self.model, _, self.preprocess = open_clip.create_model_and_transforms(
@@ -80,23 +86,24 @@ class PickleDetector:
         )
         self.model.eval()
 
-        # Load fine-tuned head if provided
+        # Always set up zero-shot (text prompts + embeddings)
+        self.pickle_prompts = pickle_prompts or PICKLE_PROMPTS
+        self.non_pickle_prompts = non_pickle_prompts or NON_PICKLE_PROMPTS
+        self.tokenizer = open_clip.get_tokenizer(model_name)
+        self._pickle_embeds = self._encode_texts(self.pickle_prompts)
+        self._non_pickle_embeds = self._encode_texts(self.non_pickle_prompts)
+        self._all_embeds = torch.cat([self._pickle_embeds, self._non_pickle_embeds])
+        self._n_pickle = len(self.pickle_prompts)
+
+        # Load fine-tuned head if provided (then we run both zero-shot and fine-tuned)
         self.head = None
         if head_path:
             with open(head_path, "rb") as f:
                 self.head = pkl.load(f)
-            self.clip_mode = "finetuned"
-            print(f"Loaded fine-tuned head from {head_path}")
+            self.mode = "zero_shot_and_finetuned"
+            print(f"Loaded fine-tuned head from {head_path} (using zero-shot + fine-tuned on every image)")
         else:
-            self.clip_mode = "zero_shot"
-            self.pickle_prompts = pickle_prompts or PICKLE_PROMPTS
-            self.non_pickle_prompts = non_pickle_prompts or NON_PICKLE_PROMPTS
-            self.tokenizer = open_clip.get_tokenizer(model_name)
-
-            self._pickle_embeds = self._encode_texts(self.pickle_prompts)
-            self._non_pickle_embeds = self._encode_texts(self.non_pickle_prompts)
-            self._all_embeds = torch.cat([self._pickle_embeds, self._non_pickle_embeds])
-            self._n_pickle = len(self.pickle_prompts)
+            self.mode = "zero_shot"
 
         if gemini_api_key:
             print(f"Gemini fallback enabled for scores in ({self.uncertain_low}, {self.uncertain_high})")
@@ -218,11 +225,26 @@ class PickleDetector:
         img_embed = self._encode_image(image)
 
         if self.head:
-            clip_result = self._detect_finetuned(img_embed)
+            # Run both zero-shot and fine-tuned, combine with max(pickle_score)
+            zs = self._detect_zero_shot(img_embed)
+            ft = self._detect_finetuned(img_embed)
+            combined_pickle = max(zs.pickle_score, ft.pickle_score)
+            combined_non = min(zs.non_pickle_score, ft.non_pickle_score)
+            clip_result = DetectionResult(
+                pickle_score=combined_pickle,
+                non_pickle_score=combined_non,
+                is_pickle=combined_pickle >= self.threshold,
+                per_prompt_scores=zs.per_prompt_scores,
+                threshold=self.threshold,
+                mode="zero_shot_and_finetuned",
+                zero_shot_score=zs.pickle_score,
+                finetuned_score=ft.pickle_score,
+                gemini_reasoning="",
+            )
         else:
             clip_result = self._detect_zero_shot(img_embed)
 
-        # Check if we should escalate to Gemini
+        # Escalate to Gemini if score is in uncertain range
         if self.gemini_api_key and self._is_uncertain(clip_result.pickle_score):
             gemini_result = self._ask_gemini(image)
             if gemini_result is not None:
