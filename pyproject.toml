@@ -4,7 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pickle-detector"
-version = "0.1.0"
+version = "0.2.0"
+description = "CLIP-based pickle detector with Gemini Vision fallback"
 requires-python = ">=3.9"
 dependencies = [
     "torch>=2.0",
@@ -15,6 +16,19 @@ dependencies = [
     "tqdm>=4.65",
     "matplotlib>=3.7",
     "scikit-learn>=1.3",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+gemini = [
+    "google-genai>=1.0",
+    "cryptography==41.0.7",
+]
+scraping = [
+    "bing-image-downloader>=1.1",
+]
+all = [
+    "pickle-detector[gemini,scraping]",
 ]
 
 [tool.setuptools.packages.find]

@@ -1,0 +1,16 @@
+# Virtual environment
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+
+
+# Environment variables
+.env
