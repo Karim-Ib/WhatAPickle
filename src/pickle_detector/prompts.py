@@ -30,6 +30,20 @@ PICKLE_PROMPTS = [
     "pickles on the side of a plate",
     "a relish tray with pickles",
     "fried pickles",
+    # Discord / casual food photos
+    "plate with some food and pickles as a side",
+    "food with pickles on the side",
+    "meal with pickles on the plate",
+    "dinner plate with pickles",
+    "pickles next to other food",
+
+    # Pickles as topping (pizza, burgers, etc.)
+    "pizza with pickles",
+    "pickles on pizza",
+    "pickles as a pizza topping",
+    "burger with pickles on it",
+    "sandwich with pickles",
+    "food with pickle slices on top",
 
     # Meme / internet context
     "a cartoon pickle",
@@ -42,12 +56,16 @@ NON_PICKLE_PROMPTS = [
     "a photo of food",
     "a photo of a meal",
     "a photo of vegetables",
+    "plate of food without pickles",
+    "meal with no pickles",
     "a photo of a salad",
     "a photo of a snack",
 
-    # Burgers/sandwiches — keep as anchors but less specific
+    # Burgers/sandwiches / pizza without pickles
     "a photo of a burger",
     "a photo of a sandwich",
+    "pizza without pickles",
+    "plain pizza",
 
     # Cucumber — hardest confusion case
     "a photo of a cucumber",

@@ -34,7 +34,9 @@ class DetectionResult:
     is_pickle: bool
     per_prompt_scores: dict    # only populated in zero-shot mode
     threshold: float
-    mode: str                  # "zero_shot" or "finetuned"
+    mode: str                  # "zero_shot", "finetuned", or "zero_shot_and_finetuned"
+    zero_shot_score: Optional[float] = None   # when mode is zero_shot_and_finetuned
+    finetuned_score: Optional[float] = None   # when mode is zero_shot_and_finetuned
 
 
 class PickleDetector:
@@ -63,24 +65,24 @@ class PickleDetector:
         )
         self.model.eval()
 
-        # Load fine-tuned head if provided
+        # Always set up zero-shot (text prompts + embeddings)
+        self.pickle_prompts = pickle_prompts or PICKLE_PROMPTS
+        self.non_pickle_prompts = non_pickle_prompts or NON_PICKLE_PROMPTS
+        self.tokenizer = open_clip.get_tokenizer(model_name)
+        self._pickle_embeds = self._encode_texts(self.pickle_prompts)
+        self._non_pickle_embeds = self._encode_texts(self.non_pickle_prompts)
+        self._all_embeds = torch.cat([self._pickle_embeds, self._non_pickle_embeds])
+        self._n_pickle = len(self.pickle_prompts)
+
+        # Load fine-tuned head if provided (then we run both zero-shot and fine-tuned)
         self.head = None
         if head_path:
             with open(head_path, "rb") as f:
                 self.head = pkl.load(f)
-            self.mode = "finetuned"
-            print(f"Loaded fine-tuned head from {head_path}")
+            self.mode = "zero_shot_and_finetuned"
+            print(f"Loaded fine-tuned head from {head_path} (using zero-shot + fine-tuned on every image)")
         else:
             self.mode = "zero_shot"
-            self.pickle_prompts = pickle_prompts or PICKLE_PROMPTS
-            self.non_pickle_prompts = non_pickle_prompts or NON_PICKLE_PROMPTS
-            self.tokenizer = open_clip.get_tokenizer(model_name)
-
-            # Pre-compute text embeddings (only needed for zero-shot)
-            self._pickle_embeds = self._encode_texts(self.pickle_prompts)
-            self._non_pickle_embeds = self._encode_texts(self.non_pickle_prompts)
-            self._all_embeds = torch.cat([self._pickle_embeds, self._non_pickle_embeds])
-            self._n_pickle = len(self.pickle_prompts)
 
     def _encode_texts(self, texts: List[str]) -> torch.Tensor:
         tokens = self.tokenizer(texts).to(self.device)
@@ -100,9 +102,22 @@ class PickleDetector:
         img_embed = self._encode_image(image)
 
         if self.head:
-            return self._detect_finetuned(img_embed)
-        else:
-            return self._detect_zero_shot(img_embed)
+            # Run both zero-shot and fine-tuned, combine with max(pickle_score)
+            zs = self._detect_zero_shot(img_embed)
+            ft = self._detect_finetuned(img_embed)
+            combined_pickle = max(zs.pickle_score, ft.pickle_score)
+            combined_non = min(zs.non_pickle_score, ft.non_pickle_score)
+            return DetectionResult(
+                pickle_score=combined_pickle,
+                non_pickle_score=combined_non,
+                is_pickle=combined_pickle >= self.threshold,
+                per_prompt_scores=zs.per_prompt_scores,
+                threshold=self.threshold,
+                mode="zero_shot_and_finetuned",
+                zero_shot_score=zs.pickle_score,
+                finetuned_score=ft.pickle_score,
+            )
+        return self._detect_zero_shot(img_embed)
 
     def _detect_finetuned(self, img_embed: torch.Tensor) -> DetectionResult:
         """
