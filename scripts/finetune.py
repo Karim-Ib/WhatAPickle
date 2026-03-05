@@ -18,6 +18,7 @@ Workflow:
 Usage:
     python scripts/finetune.py                        # defaults (logistic regression)
     python scripts/finetune.py --head mlp             # small MLP instead
+    python scripts/finetune.py --C 0.5 --max-iter 2000   # tune logreg (more reg, more iters)
     python scripts/finetune.py --model ViT-L-14       # bigger CLIP backbone
     python scripts/finetune.py --no-cache             # re-extract embeddings
 """
@@ -116,7 +117,7 @@ def extract_embeddings(
     return embeddings, labels, paths
 
 
-def build_head(head_type: str, C: float = 1.0) -> Pipeline:
+def build_head(head_type: str, C: float = 1.0, max_iter: int = 1000) -> Pipeline:
     """
     Build a classification pipeline.
 
@@ -126,10 +127,10 @@ def build_head(head_type: str, C: float = 1.0) -> Pipeline:
     """
     if head_type == "logreg":
         # Logistic regression — strong baseline, fast, interpretable.
-        # L2 penalty with C=1.0 is a reasonable default.
-        # max_iter=1000 because high-dimensional embeddings can need more steps.
+        # C: inverse regularization strength (smaller = more regularization).
+        # max_iter: high-dim embeddings can need more steps.
         clf = LogisticRegression(
-            C=C, max_iter=1000, solver="lbfgs", random_state=42
+            C=C, max_iter=max_iter, solver="lbfgs", random_state=42
         )
     elif head_type == "mlp":
         # Small MLP — one hidden layer of 128 units.
@@ -157,6 +158,8 @@ def train_and_evaluate(
         labels: np.ndarray,
         head_type: str,
         n_folds: int = 5,
+        C: float = 1.0,
+        max_iter: int = 1000,
 ):
     """
     Stratified k-fold cross-validation.
@@ -166,7 +169,7 @@ def train_and_evaluate(
     you might get lucky or unlucky with which images land in test.
     5-fold gives a much more reliable estimate of real performance.
     """
-    pipeline = build_head(head_type)
+    pipeline = build_head(head_type, C=C, max_iter=max_iter)
 
     scoring = {
         "accuracy": "accuracy",
@@ -198,9 +201,11 @@ def train_final_model(
         labels: np.ndarray,
         head_type: str,
         save_path: Path,
+        C: float = 1.0,
+        max_iter: int = 1000,
 ):
     """Train on ALL data and save for deployment."""
-    pipeline = build_head(head_type)
+    pipeline = build_head(head_type, C=C, max_iter=max_iter)
     pipeline.fit(embeddings, labels)
 
     # Quick sanity check — training accuracy
@@ -237,6 +242,8 @@ def main():
     parser.add_argument("--model", type=str, default="ViT-B-32")
     parser.add_argument("--pretrained", type=str, default="laion2b_s34b_b79k")
     parser.add_argument("--head", type=str, default="logreg", choices=["logreg", "mlp"])
+    parser.add_argument("--C", type=float, default=1.0, help="LogReg inverse regularization (smaller = more regularization)")
+    parser.add_argument("--max-iter", type=int, default=1000, help="LogReg max iterations")
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument("--no-cache", action="store_true")
     parser.add_argument("--device", type=str, default=None)
@@ -258,11 +265,11 @@ def main():
           f"embedding dim: {embeddings.shape[1]}")
 
     # Cross-validation
-    train_and_evaluate(embeddings, labels, args.head, args.folds)
+    train_and_evaluate(embeddings, labels, args.head, args.folds, C=args.C, max_iter=args.max_iter)
 
     # Train final model on all data
     model_path = output_dir / f"pickle_head_{args.head}.pkl"
-    train_final_model(embeddings, labels, args.head, model_path)
+    train_final_model(embeddings, labels, args.head, model_path, C=args.C, max_iter=args.max_iter)
 
     print(f"\nDone! To use in the detector:")
     print(f"  from pickle_detector.detector import PickleDetector")
